@@ -1,6 +1,7 @@
 package com.spo.order.service;
 
 
+import com.spo.order.config.rabbitmq.Producer;
 import com.spo.order.dto.OrderLineItemsDto;
 import com.spo.order.dto.OrderRequest;
 import com.spo.order.dto.StockResponse;
@@ -8,6 +9,7 @@ import com.spo.order.event.OrderPlacedEvent;
 import com.spo.order.model.Order;
 import com.spo.order.model.OrderLineItems;
 import com.spo.order.repository.OrderRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.sleuth.Span;
 import org.springframework.cloud.sleuth.Tracer;
@@ -23,6 +25,7 @@ import java.util.stream.Collectors;
 
 @Service
 @Transactional
+@Slf4j
 public class OrderService {
 
     @Autowired
@@ -36,6 +39,9 @@ public class OrderService {
 
     @Autowired
     private Tracer tracer;
+
+    @Autowired
+    private Producer producer;
 
     public String placeOrder(OrderRequest orderRequest) {
         Order order = new Order();
@@ -68,6 +74,7 @@ public class OrderService {
 
             if (allProductsInStock) {
                 orderRepository.save(order);
+                sendMessageRabbitMQ("Notification with RabbitMQ, Order success");
                 kafkaTemplate.send("notificationTopic", new OrderPlacedEvent(order.getOrderNumber()));
                 return "Order success";
             } else {
@@ -76,7 +83,11 @@ public class OrderService {
         } finally {
             stockServiceLookup.end();
         }
+    }
 
+    private void sendMessageRabbitMQ(String message) {
+        log.info("The message {} has been sent successfully", message);
+        producer.send(message);
     }
 
     private OrderLineItems mapToDto(OrderLineItemsDto orderLineItemsDto) {
